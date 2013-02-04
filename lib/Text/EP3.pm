@@ -1045,6 +1045,7 @@ sub define;
 sub macro;
 sub undef;
 sub include;
+sub depend;
 sub elif;
 sub elsif;
 sub else;
@@ -1343,6 +1344,39 @@ sub include
         $self->ep3_process ($file, $condition);
     }
     print "\n$self->{Delimeter} $return_line \"$Text::EP3::filename\" 2\n" if $self->{Sync_Lines};
+}
+
+sub depend
+# Manually declare a dependency
+{
+    my $self = shift;
+    my(@input_string) = @_;
+    my(@string);
+    my($inline, $directive, $file);
+
+    print "$self->{Line_Comment}EP3->else: Entered else.  Line $Text::EP3::line of $Text::EP3::filename\n"		if $self->{Debug} & 1;
+    $inline = $input_string[0];
+    @string = split(' ',$inline);
+
+    $directive = shift @string;
+    $file = shift @string;
+
+    # make sure there is a key
+    if ($file eq '') {
+       die "No file for $directive";
+    }
+
+    if ($file =~ /"(.*)"/) {
+        $file = $1;
+    }
+    elsif ($file =~ /<(.*)>/) {
+        $file = $1;
+    }
+    else {
+        die "$directive: invalid depend $file";
+    }
+
+    print $Text::EP3::Dependfile_Handle "$file\n" if $self->{Gen_Depend_List};
 }
 
 sub elif
