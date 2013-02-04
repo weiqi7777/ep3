@@ -1333,12 +1333,13 @@ sub include
         }
     }
  
+    # Print the file in the dependlist, whether or not we found it.
+    print $Text::EP3::Dependfile_Handle "$file\n" if $self->{Gen_Depend_List};
+
     if (! $result) {
         die "$directive: couldn't find $file: $!";
     }
     else {
-        # Print the file in the dependlist and then read it
-        print $Text::EP3::Dependfile_Handle "$file\n" if $self->{Gen_Depend_List};
         print "$self->{Line_Comment}EP3->include: include: Getting ready to iterate with file ->$file<- and condition ->$condition<-\n"	if $self->{Debug} & 8;
         # Iteratively process this file
         $self->ep3_process ($file, $condition);
