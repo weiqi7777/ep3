@@ -1274,7 +1274,7 @@ sub include
     my (@string);
     my ($inline, $directive, $key);
     my ($condition);
-    my ($file, $result, $dir);
+    my ($file, $abs_file, $result, $dir);
     my ($current_dir);
     my $start_pattern = quotemeta $self->{Start_Comment}; 
     my $line_pattern = quotemeta $self->{Line_Comment}; 
@@ -1315,6 +1315,7 @@ sub include
     }
 
     #Check if the file is absolute.
+    $absfile = $file;
     $result = 0;
     if ($file =~ /^\//) {
         $result = 1 if (-e $file);
@@ -1327,7 +1328,7 @@ sub include
             if ($result) {
                 print "$self->{Line_Comment}EP3->include: include: $dir/$file\n"	if $self->{Debug} & 8;
                 # Change file so it is now absolute.
-                $file = "$dir/$file";
+                $absfile = "$dir/$file";
                 last; # got one, so exit the loop
             }
         }
@@ -1340,9 +1341,9 @@ sub include
         die "$directive: couldn't find $file: $!";
     }
     else {
-        print "$self->{Line_Comment}EP3->include: include: Getting ready to iterate with file ->$file<- and condition ->$condition<-\n"	if $self->{Debug} & 8;
+        print "$self->{Line_Comment}EP3->include: include: Getting ready to iterate with file ->$absfile<- and condition ->$condition<-\n"	if $self->{Debug} & 8;
         # Iteratively process this file
-        $self->ep3_process ($file, $condition);
+        $self->ep3_process ($absfile, $condition);
     }
     print "\n$self->{Delimeter} $return_line \"$Text::EP3::filename\" 2\n" if $self->{Sync_Lines};
 }
