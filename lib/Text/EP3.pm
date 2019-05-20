@@ -252,6 +252,16 @@ will include the following line from file.V
 This is useful for partial inclusion of files (like port list specifications
 in Verilog).
 
+=item The for directive
+
+@for i = 0 to 10 delta 2
+to be explained
+
+=item the endfor directive
+
+@endfor
+to be explained
+
 =item The enum directive
 
 @enum a,b,c,d,...
@@ -975,7 +985,8 @@ sub _ep3_save_directive {
         }
         else {
             #Here, just protect the directive itself
-            $line =~ s/$save_directive//;
+            $save_directive = '';
+            #$line =~ s/$save_directive//;
         }
     }
     else {
@@ -1009,7 +1020,8 @@ sub _ep3_do_subs
         if (index($_, $key) >= 0) {
             # Check for defined macros first
             if (defined $self->{Macro_Value}{$key} ) {
-                if( /(^|\W)$key\((.*)\)(\W|$)/ ) {
+                if( /($self->{DPAT})$key\(([\w,\s]*)\)(\W|_|$)/ ) {
+                #if( /(^|\W)$key\((.*)\)(\W|$)/ ) {
                 @newvars = split(',',$2);
                 @macvars = split (',',$self->{Macro_Vars}{$key});
                 die "Macro and definition have different number of variables" if ($#newvars != $#macvars);
@@ -1018,15 +1030,22 @@ sub _ep3_do_subs
                     $newvar = shift (@newvars);
                     $newmacro =~ s/(^|\W)\Q$var\E(\W|$)/$1$newvar$2/g;
                 }
-                s/(^|\W)$key\(.*\)(\W|$)/$1$newmacro$2/g;
+                s/($self->{DPAT})$key\([\w,\s]*\)(\W|$)/$newmacro$2/g;
+                #s/(^|\W)$key\(.*\)(\W|$)/$1$newmacro$2/g;
                 #print "/*<$1$key(.*)$2> replaced by macro definition <$1$newmacro$2>\n*/" if $self->{Debug} & 2;
               }
             }
             # Then check for defines
             elsif (defined $self->{Define_List}{$key} ) {
-                if( s/(^|\W)$key(\W|$)/$1$self->{Define_List}{$key}$2/g ){
+                #if( s/(^|\W)$key(\W|$)/$1$self->{Define_List}{$key}$2/g ){
                     #print "/*<$1$key$2> defined with <$1$self->{Define_List}{$key}$2>\n*/"	if $self->{Debug} & 2;
+                #}
+                if(s/($self->{DPAT})$key($self->{DPAT})/$self->{Define_List}{$key}/g ){
                 }
+                elsif(s/($self->{DPAT})$key(\W|$)/$self->{Define_List}{$key}$2/g ){
+                }
+                    #print "/*<$1$key$2> defined with <$1$self->{Define_List}{$key}$2>\n*/"	if $self->{Debug} & 2;
+
             }
             # And finally replaces
             elsif (defined $self->{Replace_List}{$key} ) {
@@ -1036,8 +1055,9 @@ sub _ep3_do_subs
             }
         }
     }
-    # Put the protected directive portion back on the line
-    $_ = $save_directive . $_;
+
+  # Put the protected directive portion back on the line
+  $_ = $save_directive . $_;
 }
 
 sub replace;
@@ -1045,7 +1065,6 @@ sub define;
 sub macro;
 sub undef;
 sub include;
-sub depend;
 sub elif;
 sub elsif;
 sub else;
@@ -1053,6 +1072,8 @@ sub ifndef;
 sub ifdef;
 sub endif;
 sub if;
+sub endfor;
+sub for;
 sub enum;
 sub eval;
 sub perl_begin;
@@ -1078,6 +1099,7 @@ sub ep3_includes ;
 sub ep3_defines ;
 sub ep3_require_modules ;
 sub ep3_output_file ;
+
 
 1;
 
@@ -1274,7 +1296,7 @@ sub include
     my (@string);
     my ($inline, $directive, $key);
     my ($condition);
-    my ($file, $abs_file, $result, $dir);
+    my ($file, $result, $dir);
     my ($current_dir);
     my $start_pattern = quotemeta $self->{Start_Comment}; 
     my $line_pattern = quotemeta $self->{Line_Comment}; 
@@ -1315,7 +1337,6 @@ sub include
     }
 
     #Check if the file is absolute.
-    $absfile = $file;
     $result = 0;
     if ($file =~ /^\//) {
         $result = 1 if (-e $file);
@@ -1328,57 +1349,23 @@ sub include
             if ($result) {
                 print "$self->{Line_Comment}EP3->include: include: $dir/$file\n"	if $self->{Debug} & 8;
                 # Change file so it is now absolute.
-                $absfile = "$dir/$file";
+                $file = "$dir/$file";
                 last; # got one, so exit the loop
             }
         }
     }
  
-    # Print the file in the dependlist, whether or not we found it.
-    print $Text::EP3::Dependfile_Handle "$file\n" if $self->{Gen_Depend_List};
-
     if (! $result) {
         die "$directive: couldn't find $file: $!";
     }
     else {
-        print "$self->{Line_Comment}EP3->include: include: Getting ready to iterate with file ->$absfile<- and condition ->$condition<-\n"	if $self->{Debug} & 8;
+        # Print the file in the dependlist and then read it
+        print $Text::EP3::Dependfile_Handle "$file\n" if $self->{Gen_Depend_List};
+        print "$self->{Line_Comment}EP3->include: include: Getting ready to iterate with file ->$file<- and condition ->$condition<-\n"	if $self->{Debug} & 8;
         # Iteratively process this file
-        $self->ep3_process ($absfile, $condition);
+        $self->ep3_process ($file, $condition);
     }
     print "\n$self->{Delimeter} $return_line \"$Text::EP3::filename\" 2\n" if $self->{Sync_Lines};
-}
-
-sub depend
-# Manually declare a dependency
-{
-    my $self = shift;
-    my(@input_string) = @_;
-    my(@string);
-    my($inline, $directive, $file);
-
-    print "$self->{Line_Comment}EP3->else: Entered else.  Line $Text::EP3::line of $Text::EP3::filename\n"		if $self->{Debug} & 1;
-    $inline = $input_string[0];
-    @string = split(' ',$inline);
-
-    $directive = shift @string;
-    $file = shift @string;
-
-    # make sure there is a key
-    if ($file eq '') {
-       die "No file for $directive";
-    }
-
-    if ($file =~ /"(.*)"/) {
-        $file = $1;
-    }
-    elsif ($file =~ /<(.*)>/) {
-        $file = $1;
-    }
-    else {
-        die "$directive: invalid depend $file";
-    }
-
-    print $Text::EP3::Dependfile_Handle "$file\n" if $self->{Gen_Depend_List};
 }
 
 sub elif
@@ -2098,5 +2085,251 @@ sub ep3_output_file {
     $self->{Outfile_Handle} = $Outfile_Handle;
     $filename;
 }
+
+
+sub for
+# Inclusive for loop
+# usage: @for var = expr to expr delta expr
+{
+    my $self = shift;
+    my(@input_string) = @_;
+    my($cmd) = shift;
+    my($stream) = @_;
+    my $sttype = 0;
+    my(@string);
+    my($inline, $directive, $expr, $skip, $ifkeynum, $result, $initifdef);
+    my $ctxd = "###";
+
+    if ($stream)
+    {
+        $cmd->{COMMAND} = "SKIP";
+        $sttype = 1;
+        print "for $sttype ".$cmd->{COMMAND}." ".$cmd->{VALUE}."\n";
+    }
+    else
+    {
+        $sttype = 0;
+        $stream = $Text::EP3::filehandle;
+    }
+
+    print "$self->{Line_Comment}EP3->for: Extered for. Line $Text::EP3::line of $Text::EP3::filename\n"
+        if $self->{Debug} & 1;
+    $inline = $input_string[0];
+    @string = split(' ',$inline);
+
+    # parse key string
+    $directive = shift @string;
+    $expr = join(' ',@string);
+    my $iter = "";
+    my $s = -1;
+    my $e = -1;
+    my $d = "";;
+    if ($expr =~ /(\w+)\s*=\s*(.+)\s+to\s+(.+)delta\s+([^$ctxd]+)/)
+    {
+        $iter = $1;
+        $s = $2;
+        $e = $3;
+        $d = $4;
+    }
+    elsif ($expr =~ /(\w+)\s*=\s*(.+)\s+to\s+([^$ctxd]+)/)
+    {
+        $iter = $1;
+        $s = $2;
+        $e = $3;
+    }
+    else
+    {
+        die "Error in \@for construct at line $Text::EP3::line of $Text::EP3::filename";
+    }
+
+    die "Error in \@for inerator at line $Text::EP3::line of $Text::EP3::filename : Bad variable name $iter"
+        unless ($iter =~ /^\w+/);
+
+    if( !defined $self->{For} )
+    {
+        $self->{For} = 0;
+        $self->{For_Depth} = 0;
+        $self->{For_Exe} = ();
+    }
+
+    my $lc = 0;
+    my $frd = $self->{For};
+    $self->{For}++;
+    $self->{For_Depth}++;
+    #push(@{$self->{For_Exe}}, [()]) if ((!defined @{$self->{For_Exe}})||($self->{For} > scalar(@{$self->{For_Exe}})));
+    push(@{$self->{For_Exe}}, [()]) if ((!@{$self->{For_Exe}})||($self->{For} > scalar(@{$self->{For_Exe}})));
+    my $ilen = scalar(@{@{$self->{For_Exe}}[$self->{For}-1]});
+    push(@{@{$self->{For_Exe}}[$self->{For}-1]},
+        {
+            ITERSTARTEXP => $s,
+            ITEREXP      => $iter,
+            ITERENDEXP   => $e,
+            DELTAEXP     => $d,
+            ITERSTART    => -1,
+            ITER         => -1,
+            ITEREND      => -1,
+            DELTA        => 0,
+            LINEBUFS     => [[],[]],
+            BUFPTR       => "0",
+            NEST         => {},
+            LINEPOS      => $.,
+        });
+    my $forref = @{@{$self->{For_Exe}}[($self->{For}-1)]}[-1];
+    while(($sttype) ? ($_ = @$stream[($cmd->{VALUE})++]) : ($_ = <$stream>))
+    {
+        if (/^\s*$self->{DPAT}for/)
+        {
+            $forref->{NEST}->{$lc} = 1;
+            my $ct = ($self->{For} > (scalar(@{$self->{For_Exe}})-1)) ? 0 : scalar(@{@{$self->{For_Exe}}[($self->{For})]});
+            $_ =~ s/\n//g;
+            $_ = $_." $ctxd$ct\n";
+            push(@{@{$forref->{LINEBUFS}}[$forref->{BUFPTR}]}, $_);
+            $self->for($_);
+        }
+        elsif (/^\s*$self->{DPAT}endfor/)
+        {
+            $self->{For}--;
+            push(@{@{$forref->{LINEBUFS}}[$forref->{BUFPTR}]}, $_);
+            last;
+        }
+        else
+        {
+            push(@{@{$forref->{LINEBUFS}}[$forref->{BUFPTR}]}, $_);
+        }
+        $lc++;
+    }
+
+    die "Error in \@for construct at line $forref->{LINEPOS} of $Text::EP3::filename : Missing \@endfor ?"
+        unless ($frd == $self->{For});
+
+    # upon unwinding, execute
+    my @stack = ();
+    my $ret = "";
+    my $ctx = 0; 
+    if (($self->{For} == 0)&&($self->{For_Depth}))
+    {
+StackCall:
+        unshift @stack, $ctx;    
+        # Adjust stackfram
+        my $spframe = @{@{$self->{For_Exe}}[scalar(@stack)-1]}[$stack[0]];
+        {
+            # see if the expression evaluates
+            no strict;
+            $_ = $spframe->{ITERSTARTEXP};
+            $self->_ep3_do_subs();
+            my $rs = eval($_);
+            die "Error in the \@for lower bound clause at line $spframe->{LINEPOS} of $Text::EP3::filename -> $@" if $@;
+            print "$self->{Line_Comment}EP3->for: $spframe->{ITERSTARTEXP} evaluates to $rs\n" if $self->{Debug} & 16;
+            $_ = $spframe->{ITERENDEXP};
+            $self->_ep3_do_subs();
+            my $re = eval($_);
+            die "Error in the \@for upper bound clause at line $spframe->{LINEPOS} of $Text::EP3::filename -> $@" if $@;
+            print "$self->{Line_Comment}EP3->for: $spframe->{ITERENDEXP} evaluates to $re\n" if $self->{Debug} & 16;
+            $spframe->{DELTAEXP} = (($re >= $rs) ? 1 : -1) if ($spframe->{DELTAEXP} eq "");
+            $_ = $spframe->{DELTAEXP};
+            $self->_ep3_do_subs();
+            my $rd = eval($_);
+            die "Error in the \@for delta  clause at line $spframe->{LINEPOS} of $Text::EP3::filename -> $@" if ($@ || ($rd == 0));
+            print "$self->{Line_Comment}EP3->for: $spframe->{DELTAEXP} evaluates to $rd\n" if $self->{Debug} & 16;
+            use strict;
+
+            $spframe->{ITERSTART} = $rs;
+            $spframe->{ITER}      = $rs;
+            $spframe->{ITEREND}   = $re;
+            $spframe->{DELTA}     = $rd;
+        }
+
+        $self->{Keylist}[$self->{Keycount}] = $spframe->{ITEREXP};
+        $self->{Keycount}++;
+        die "Currently unsupported: Iterator variable not unique in \@for definition at $spframe->{LINEPOS} of $Text::EP3::filename -> $spframe->{ITEREXP}"
+            if ( $self->{Define_List}{$spframe->{ITEREXP}} );
+        for(;scalar(@stack);)
+        {
+            for($spframe = @{@{$self->{For_Exe}}[scalar(@stack)-1]}[$stack[0]];
+                (($spframe->{DELTA} > 0 )?
+                    ($spframe->{ITER} <= $spframe->{ITEREND}):
+                    ($spframe->{ITER} >= $spframe->{ITEREND}));
+                $spframe->{ITER} += $spframe->{DELTA})
+            {
+                $self->{Define_List}{$spframe->{ITEREXP}} = $spframe->{ITER};
+                for(my $ii = 0; $ii < scalar(@{@{$spframe->{LINEBUFS}}[$spframe->{BUFPTR}]});)
+                {
+                    my $line = shift(@{@{$spframe->{LINEBUFS}}[$spframe->{BUFPTR}]});
+                    push(@{@{$spframe->{LINEBUFS}}[($spframe->{BUFPTR}+1)%2]}, $line);
+
+                    # potential context switch
+                    if( $line =~ /^\s*$self->{DPAT}for.*$ctxd(\d+)/)
+                    {
+                        $ctx = $1;
+                        goto StackCall;
+                    }
+                    elsif ($line =~ /^\s*$self->{DPAT}endfor/)
+                    {
+                        goto Loop;
+                    }
+
+                    # Process line
+                    $_ = $line;
+                    $self->_ep3_do_subs();
+                    # if this was a directive line ... then lets invoke the directive method
+                    if (/^(\s*)$self->{DPAT}\w+/) {
+                        # get rid of any leading spaces and save them in case any
+                        # directive wants to use them 
+                        $self->{Indent} = $1;
+                        # get the method token
+                        @string = split(' ',$_);
+                        my $method = substr($string[0],1,length($string[0])-1);
+
+                        # call method if it is avaliable
+                        # i feel the it is pretty important to be able to cover
+                        # text cases that look like directives and are not - this is a pretty
+                        # good check
+                        if( ! $self->can($method)) {
+                            if( $self->{In_Perl_Begin} <= 0) {
+                                carp "Unknown Directive $self->{Delimeter}$method, Line $Text::EP3::line of file $Text::EP3::filename, Passing to output";
+                            }
+                        }
+                        else
+                        {
+                            my %cmd = ( COMMAND => "NOP", VALUE => 0);
+                            no strict;
+                            $self->$method($_, \%cmd, \@{@{$spframe->{LINEBUFS}}[$spframe->{BUFPTR}]});
+                            use strict;
+                            my $tmp = chomp;
+                            die "Internale error: In \@for processing at $spframe->{LINEPOS} of $Text::EP3::flename!"
+                            if (($cmd{COMMAND} =~ /SKIP/)&&
+                                ($cmd{VALUE} > scalar(@{@{$spframe->{LINEBUFS}}[$spframe->{BUFPTR}]})));
+                                for(my $s = 0; ($s < $cmd{VALUE})&&($cmd{COMMAND} =~ /SKIP/); $s++)
+                                {
+                                    my $skipline = shift(@{@{$spframe->{LINEBUFS}}[$spframe->{BUFPTR}]});
+                                    push(@{@{$spframe->{LINEBUFS}}[($spframe->{BUFPTR}+1)%2]}, $skipline);
+                                }
+                            $_ = '';
+                        }
+                    }
+                    print "$_";
+                }
+Loop:
+            $spframe->{BUFPTR}++;
+            $spframe->{BUFPTR} %= 2;
+        }
+            $self->{Keycount}--;
+            undef $self->{Define_List}{$spframe->{ITEREXP}};
+            $spframe->{ITER} = $spframe->{ITERSTART};
+            shift @stack;
+        }
+        # clean
+        $self->{For} = 0;
+        $self->{For_Depth} = 0;
+        @{$self->{For_Exe}} = ();
+    }
+}
+
+sub endfor
+{
+    my $self = shift;
+    die "Unexpected $self->{Delimeter}endfor at line $Text::EP3::line of $Text::EP3::filename\n";
+}
+
 
 1;
